@@ -1,0 +1,8 @@
+{
+    "base_url": "https://abstd.ru/",
+    "customers": [
+        "ПАЛЬМА MSK 984 1 ДЕНЬ ООО",
+        "ПАЛЬМА MSK 983 склад 2 ООО"
+    ],
+    "confirmation_file_path": "source/example.xls"
+}
