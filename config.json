@@ -1,8 +1,6 @@
 {
-    "base_url": "https://abstd.ru/",
-    "customers": [
-        "ПАЛЬМА MSK 984 1 ДЕНЬ ООО",
-        "ПАЛЬМА MSK 983 склад 2 ООО"
-    ],
-    "confirmation_file_path": "source/example.xls"
+    "confirmation_file_path": "source/example.xls",
+    "order_id_col": 1,
+    "quantity_col": 5,
+    "order_product_id_col": 8
 }

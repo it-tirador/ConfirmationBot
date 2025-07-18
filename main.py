@@ -2,6 +2,8 @@ import json
 import os
 import logging
 import requests
+import sys
+import argparse
 
 from dotenv import load_dotenv
 
@@ -14,6 +16,8 @@ logging.basicConfig(
     filemode="w",
     encoding="utf-8"
 )
+
+
 
 def send_telegram_message(text: str):
     """
@@ -37,9 +41,15 @@ def send_telegram_message(text: str):
     except Exception as e:
         logging.error(f"Ошибка отправки сообщения в Telegram: {e}")
 
+
+
 def get_config(json_file: str="config.json") -> dict | None:
     """
     Загружает конфигурацию из JSON-файла.
+    Args:
+        json_file: str
+    Returns:
+        dict | None: Конфигурация или None в случае ошибки
     """
     try:
         with open(json_file, "r") as f:
@@ -52,13 +62,18 @@ def get_config(json_file: str="config.json") -> dict | None:
         return None
 
 
+
 def init_session(config: dict) -> requests.Session | None:
     """
     Инициализирует сессию для работы с сайтом.
+    Args:
+        config: dict
+    Returns:
+        requests.Session | None: Сессия или None в случае ошибки
     """
     try:
         session = requests.Session()
-        session.get(config["base_url"])
+        session.get(os.getenv("BASE_URL"))
         logging.info("Сессия инициализирована.")
         return session
     except Exception as e:
@@ -67,9 +82,14 @@ def init_session(config: dict) -> requests.Session | None:
         return None
 
 
+
 def authorize(session: requests.Session) -> bool:
     """
     Авторизуется на сайте.
+    Args:
+        session: requests.Session
+    Returns:
+        bool: True если авторизация прошла успешно, False в противном случае
     """
     try:
         payload = {
@@ -77,7 +97,7 @@ def authorize(session: requests.Session) -> bool:
             "password": os.getenv("PASSWORD"),
             "save_password": "on",
         }
-        response = session.post("https://abstd.ru/auth-ajax_login", data=payload)
+        response = session.post(os.path.join(os.getenv("BASE_URL"), "auth-ajax_login"), data=payload)
         response.raise_for_status()
         logging.info("Авторизация прошла успешно.")
         if response.json().get("errors"):
@@ -91,12 +111,18 @@ def authorize(session: requests.Session) -> bool:
         return False
 
 
-def upload_file(session: requests.Session, config: dict) -> str | None:
+
+def upload_file(session: requests.Session, config: dict, file_path: str) -> str | None:
     """
     Загружает файл подтверждения заказа на сайт.
+    Args:
+        session: requests.Session
+        config: dict
+        file_path: str
+    Returns:
+        str | None: Имя загруженного файла или None в случае ошибки
     """
-    url = "https://abstd.ru/supplier_answer-load_answer_file"
-    file_path = config["confirmation_file_path"]
+    url = os.path.join(os.getenv("BASE_URL"), "supplier_answer-load_answer_file")
     try:
         with open(file_path, "rb") as f:
             files = {
@@ -113,15 +139,21 @@ def upload_file(session: requests.Session, config: dict) -> str | None:
         return None
 
 
-def process_file(session: requests.Session, file_name: str, file_path: str) -> None:
+
+def process_file(session: requests.Session, file_name: str, file_path: str, config: dict) -> None:
     """
     Обрабатывает файл подтверждения заказа на сайте.
+    Args:
+        session: requests.Session
+        file_name: str
+        file_path: str
+        config: dict
     """
-    proc_url = "https://abstd.ru/supplier_answer-proc_answer_file"
+    proc_url = os.path.join(os.getenv("BASE_URL"), "supplier_answer-proc_answer_file")
     proc_data = {
-        "order_id_col": 1,  # номер колонки для "№ заказа клиента"
-        "quantity_col": 5,  # номер колонки для "Количество"
-        "order_product_id_col": 8,  # номер колонки для "Код позиции"
+        "order_id_col": config["order_id_col"],  # номер колонки для "№ заказа клиента"
+        "quantity_col": config["quantity_col"],  # номер колонки для "Количество"
+        "order_product_id_col": config["order_product_id_col"],  # номер колонки для "Код позиции"
         "file_name": file_name,
         "cancel_reason": "",
         "dataType": "json"
@@ -147,19 +179,50 @@ def process_file(session: requests.Session, file_name: str, file_path: str) -> N
         logging.error(f"Ошибка при обработке файла: {e}")
         send_telegram_message(f"❌ Ошибка подтверждения\n📎<b>Ошибка:</b><i>{e}</i>")
 
+
+
 def main():
+    # Настройка парсера аргументов
+    parser = argparse.ArgumentParser(
+        description='Загрузка подтверждения заказа',
+        epilog='Пример: python main.py "C:\\path\\to\\file.xls"'
+    )
+    parser.add_argument(
+        'file_path', 
+        nargs='?',
+        help='Путь к файлу подтверждения заказа (.xls)'
+    )
+    
+    args = parser.parse_args()
+    
     config = get_config()
     if not config:
         return
+    
+    # Гибридный подход: аргумент командной строки или config
+    if args.file_path:
+        file_path = args.file_path
+        logging.info(f"Используется файл из аргумента командной строки: {file_path}")
+    else:
+        if "confirmation_file_path" not in config:
+            error_msg = "Не указан путь к файлу подтверждения ни в аргументах командной строки, ни в config.json"
+            logging.error(error_msg)
+            send_telegram_message(f"❌ Ошибка подтверждения\n📎<b>Ошибка:</b><i>{error_msg}</i>")
+            return
+        file_path = config["confirmation_file_path"]
+        logging.info(f"Используется файл из конфига: {file_path}")
+    
     session = init_session(config)
     if not session:
         return
     if not authorize(session):
         return
-    file_name = upload_file(session, config)
+    file_name = upload_file(session, config, file_path)
     if not file_name:
         return
-    process_file(session, file_name, config["confirmation_file_path"])
+    process_file(session, file_name, file_path, config)
+
+
 
 if __name__ == "__main__":
     main()
